@@ -1,5 +1,6 @@
 use ratatui::TerminalOptions;
 use std::fmt::Display;
+use std::path::PathBuf;
 use std::{sync::mpsc, thread, time::Duration};
 
 use crossterm::event;
@@ -108,7 +109,7 @@ fn main() -> std::io::Result<()> {
 fn next_pomo(pomo: Pomo) -> Pomo {
     match pomo.kind {
         PomoKind::Focus => {
-            if pomo.count > 0 && pomo.count % 4 == 0 {
+            if pomo.count > 0 && pomo.count.is_multiple_of(4) {
                 Pomo {
                     kind: PomoKind::LongBreak,
                     count: pomo.count,
@@ -181,6 +182,21 @@ fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<Command>) {
     }
 }
 
+fn get_state_file() -> PathBuf {
+    let state_file = std::env::var("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").expect("HOME not set");
+            PathBuf::from(home).join(".local/state")
+        })
+        .join("pomodoro/status.txt");
+
+    if let Some(parent) = state_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    state_file
+}
+
 fn run(
     terminal: &mut DefaultTerminal,
     event_rx: mpsc::Receiver<Event>,
@@ -190,6 +206,7 @@ fn run(
     worker_tx
         .send(Command::Start(pomo.kind.get_mins()))
         .unwrap();
+    let state_file = get_state_file();
     loop {
         // terminal.draw(|frame| render(frame, &pomo))?;
         terminal.draw(|frame| frame.render_widget(&pomo, frame.area()))?;
@@ -232,6 +249,10 @@ fn run(
             Event::PomoUpdate(remaining_secs, progress) => {
                 pomo.rem = remaining_secs;
                 pomo.progress = progress;
+                let _ = std::fs::write(
+                    state_file.as_path(),
+                    format!("{}: {}:{}", pomo.kind, pomo.rem / 60, pomo.rem % 60),
+                );
             }
             Event::PomoDone => {
                 pomo = next_pomo(pomo);
@@ -274,7 +295,7 @@ impl Widget for &Pomo {
         LineGauge::default()
             .filled_style(Style::new().white().on_black().bold())
             .filled_symbol(symbols::line::THICK_HORIZONTAL)
-            .ratio(self.progress / 100 as f64)
+            .ratio(self.progress / 100_f64)
             .render(layout[2], buf);
     }
 }
