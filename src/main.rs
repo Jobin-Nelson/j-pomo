@@ -85,7 +85,7 @@ impl Pomo {
 
 fn main() -> std::io::Result<()> {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
-        viewport: Viewport::Inline(10),
+        viewport: Viewport::Inline(13),
     });
 
     let (event_tx, event_rx) = mpsc::channel();
@@ -184,6 +184,18 @@ fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<PomoCommand>) {
     }
 }
 
+struct StateFileGuard {
+    path: PathBuf,
+}
+
+impl Drop for StateFileGuard {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 fn get_state_file() -> PathBuf {
     let state_file = std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)
@@ -228,6 +240,9 @@ fn run(
         .send(PomoCommand::Start(pomo.kind.get_mins()))
         .unwrap();
     let state_file = get_state_file();
+    let _guard = StateFileGuard {
+        path: state_file.clone(),
+    };
     loop {
         // terminal.draw(|frame| render(frame, &pomo))?;
         terminal.draw(|frame| frame.render_widget(&pomo, frame.area()))?;

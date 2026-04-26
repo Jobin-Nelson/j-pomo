@@ -11,9 +11,6 @@
   - [License](#license)
   <!--toc:end-->
 
-License: MIT (LICENSE)
-Rust Version (https://crates.io/crates/j-pomo)
-
 │ ⏱️ Terminal-based Pomodoro Timer using Ratatui (https://ratatui.rs/) for TUI interface
 
 ## About
