@@ -1,6 +1,7 @@
 use ratatui::TerminalOptions;
 use std::fmt::Display;
 use std::path::PathBuf;
+use std::process::Command;
 use std::{sync::mpsc, thread, time::Duration};
 
 use crossterm::event;
@@ -11,7 +12,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{LineGauge, List, ListItem, Widget};
 use ratatui::{DefaultTerminal, Viewport, symbols};
 
-const FOCUS_MINS: u32 = 25;
+const FOCUS_MINS: u32 = 1;
 const BREAK_MINS: u32 = 5;
 const LONG_BREAK_MINS: u32 = 15;
 
@@ -53,7 +54,7 @@ enum Event {
     PomoDone,
 }
 
-enum Command {
+enum PomoCommand {
     Start(u32),
     Pause,
     Resume,
@@ -84,7 +85,7 @@ impl Pomo {
 
 fn main() -> std::io::Result<()> {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
-        viewport: Viewport::Inline(13),
+        viewport: Viewport::Inline(10),
     });
 
     let (event_tx, event_rx) = mpsc::channel();
@@ -143,7 +144,7 @@ fn handle_input(tx: mpsc::Sender<Event>) {
     });
 }
 
-fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<Command>) {
+fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<PomoCommand>) {
     let mut total_secs = 0;
     let mut remaining_secs = 0;
     let mut is_paused = false;
@@ -156,14 +157,14 @@ fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<Command>) {
 
         match rx.recv_timeout(timeout) {
             Ok(command) => match command {
-                Command::Start(mins) => {
+                PomoCommand::Start(mins) => {
                     total_secs = mins * 60;
                     remaining_secs = total_secs;
                     is_paused = false;
                 }
-                Command::Pause => is_paused = true,
-                Command::Resume => is_paused = false,
-                Command::Quit => break,
+                PomoCommand::Pause => is_paused = true,
+                PomoCommand::Resume => is_paused = false,
+                PomoCommand::Quit => break,
             },
             Err(_) => {
                 if is_paused {
@@ -175,6 +176,7 @@ fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<Command>) {
                     tx.send(Event::PomoUpdate(remaining_secs, progress as f64))
                         .unwrap();
                 } else {
+                    is_paused = true;
                     tx.send(Event::PomoDone).unwrap();
                 }
             }
@@ -197,14 +199,33 @@ fn get_state_file() -> PathBuf {
     state_file
 }
 
+fn alert_user(pomo_kind: &PomoKind) {
+    let _ = Command::new("notify-send")
+        .arg("-u")
+        .arg("critical")
+        .arg("-a")
+        .arg("pomo")
+        .arg(format!(
+            "START {}: {} mins",
+            pomo_kind,
+            pomo_kind.get_mins()
+        ))
+        .spawn();
+
+    let _ = Command::new("paplay")
+        .arg("/usr/share/sounds/freedesktop/stereo/complete.oga")
+        .spawn()
+        .ok();
+}
+
 fn run(
     terminal: &mut DefaultTerminal,
     event_rx: mpsc::Receiver<Event>,
-    worker_tx: mpsc::Sender<Command>,
+    worker_tx: mpsc::Sender<PomoCommand>,
 ) -> std::io::Result<()> {
     let mut pomo = Pomo::new();
     worker_tx
-        .send(Command::Start(pomo.kind.get_mins()))
+        .send(PomoCommand::Start(pomo.kind.get_mins()))
         .unwrap();
     let state_file = get_state_file();
     loop {
@@ -213,31 +234,31 @@ fn run(
         match event_rx.recv().unwrap() {
             Event::Input(event) => match event.code {
                 event::KeyCode::Char('q') => {
-                    worker_tx.send(Command::Quit).unwrap();
+                    worker_tx.send(PomoCommand::Quit).unwrap();
                     break;
                 }
                 event::KeyCode::Char('p') => {
                     pomo.status = match pomo.status {
                         PomoStatus::Running => {
-                            worker_tx.send(Command::Pause).unwrap();
+                            worker_tx.send(PomoCommand::Pause).unwrap();
                             PomoStatus::Paused
                         }
                         PomoStatus::Paused => {
-                            worker_tx.send(Command::Resume).unwrap();
+                            worker_tx.send(PomoCommand::Resume).unwrap();
                             PomoStatus::Running
                         }
                     }
                 }
                 event::KeyCode::Char('r') => {
                     worker_tx
-                        .send(Command::Start(pomo.kind.get_mins()))
+                        .send(PomoCommand::Start(pomo.kind.get_mins()))
                         .unwrap();
                     pomo.status = PomoStatus::Running;
                 }
                 event::KeyCode::Char('n') => {
                     pomo = next_pomo(pomo);
                     worker_tx
-                        .send(Command::Start(pomo.kind.get_mins()))
+                        .send(PomoCommand::Start(pomo.kind.get_mins()))
                         .unwrap();
                     pomo.status = PomoStatus::Running;
                 }
@@ -256,6 +277,10 @@ fn run(
             }
             Event::PomoDone => {
                 pomo = next_pomo(pomo);
+                alert_user(&pomo.kind);
+                worker_tx
+                    .send(PomoCommand::Start(pomo.kind.get_mins()))
+                    .unwrap();
             }
         }
     }
