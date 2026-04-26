@@ -12,7 +12,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{LineGauge, List, ListItem, Widget};
 use ratatui::{DefaultTerminal, Viewport, symbols};
 
-const FOCUS_MINS: u32 = 1;
+const FOCUS_MINS: u32 = 25;
 const BREAK_MINS: u32 = 5;
 const LONG_BREAK_MINS: u32 = 15;
 
@@ -85,8 +85,13 @@ impl Pomo {
 
 fn main() -> std::io::Result<()> {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
-        viewport: Viewport::Inline(13),
+        viewport: Viewport::Inline(8),
     });
+
+    let state_file = get_state_file();
+    let _guard = StateFileGuard {
+        path: state_file.clone(),
+    };
 
     let (event_tx, event_rx) = mpsc::channel();
     let (worker_tx, worker_rx) = mpsc::channel();
@@ -98,7 +103,7 @@ fn main() -> std::io::Result<()> {
         pomo_worker(event_to_worker, worker_rx);
     });
 
-    let app_result = run(&mut terminal, event_rx, worker_tx);
+    let app_result = run(&mut terminal, event_rx, worker_tx, state_file);
 
     ratatui::restore();
 
@@ -135,10 +140,16 @@ fn next_pomo(pomo: Pomo) -> Pomo {
 fn handle_input(tx: mpsc::Sender<Event>) {
     thread::spawn(move || {
         loop {
-            match event::read().unwrap() {
-                event::Event::Key(key) => tx.send(Event::Input(key)).unwrap(),
-                event::Event::Resize(_, _) => tx.send(Event::Resize).unwrap(),
-                _ => {}
+            if let Ok(event) = event::read() {
+                let result = match event {
+                    event::Event::Key(key) => tx.send(Event::Input(key)),
+                    event::Event::Resize(_, _) => tx.send(Event::Resize),
+                    _ => Ok(()),
+                };
+                // if receiver is dropped, stop listening
+                if result.is_err() {
+                    break;
+                }
             }
         }
     });
@@ -173,11 +184,19 @@ fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<PomoCommand>) {
                 if remaining_secs > 0 {
                     remaining_secs -= 1;
                     let progress = (total_secs - remaining_secs) * 100 / total_secs;
-                    tx.send(Event::PomoUpdate(remaining_secs, progress as f64))
-                        .unwrap();
+                    // if send fails main thread has hung up. Time to exit.
+                    if tx
+                        .send(Event::PomoUpdate(remaining_secs, progress as f64))
+                        .is_err()
+                    {
+                        break;
+                    }
                 } else {
                     is_paused = true;
-                    tx.send(Event::PomoDone).unwrap();
+                    // if send fails main thread has hung up. Time to exit.
+                    if tx.send(Event::PomoDone).is_err() {
+                        break;
+                    }
                 }
             }
         }
@@ -234,22 +253,24 @@ fn run(
     terminal: &mut DefaultTerminal,
     event_rx: mpsc::Receiver<Event>,
     worker_tx: mpsc::Sender<PomoCommand>,
+    state_file: PathBuf,
 ) -> std::io::Result<()> {
     let mut pomo = Pomo::new();
     worker_tx
         .send(PomoCommand::Start(pomo.kind.get_mins()))
         .unwrap();
-    let state_file = get_state_file();
-    let _guard = StateFileGuard {
-        path: state_file.clone(),
-    };
     loop {
-        // terminal.draw(|frame| render(frame, &pomo))?;
         terminal.draw(|frame| frame.render_widget(&pomo, frame.area()))?;
         match event_rx.recv().unwrap() {
             Event::Input(event) => match event.code {
                 event::KeyCode::Char('q') => {
-                    worker_tx.send(PomoCommand::Quit).unwrap();
+                    let _ = worker_tx.send(PomoCommand::Quit);
+                    break;
+                }
+                event::KeyCode::Char('c')
+                    if event.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                {
+                    let _ = worker_tx.send(PomoCommand::Quit);
                     break;
                 }
                 event::KeyCode::Char('p') => {
