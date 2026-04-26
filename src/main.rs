@@ -1,277 +1,280 @@
-use std::{
-    collections::{BTreeMap, VecDeque},
-    sync::mpsc,
-    thread,
-    time::{Duration, Instant},
-};
+use ratatui::TerminalOptions;
+use std::fmt::Display;
+use std::{sync::mpsc, thread, time::Duration};
 
-use color_eyre::Result;
 use crossterm::event;
-use rand::distr::{Distribution, Uniform};
-use ratatui::backend::Backend;
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Gauge, LineGauge, List, ListItem, Paragraph, Widget};
-use ratatui::{Frame, Terminal, TerminalOptions, Viewport, symbols};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::prelude::Stylize;
+use ratatui::style::Style;
+use ratatui::text::Line;
+use ratatui::widgets::{LineGauge, List, ListItem, Widget};
+use ratatui::{DefaultTerminal, Viewport, symbols};
 
-fn main() -> Result<()> {
-    color_eyre::install()?;
+const FOCUS_MINS: u32 = 25;
+const BREAK_MINS: u32 = 5;
+const LONG_BREAK_MINS: u32 = 15;
+
+#[derive(Default)]
+enum PomoKind {
+    #[default]
+    Focus,
+    Break,
+    LongBreak,
+}
+
+impl PomoKind {
+    fn get_mins(&self) -> u32 {
+        match self {
+            PomoKind::Focus => FOCUS_MINS,
+            PomoKind::Break => BREAK_MINS,
+            PomoKind::LongBreak => LONG_BREAK_MINS,
+        }
+    }
+}
+
+impl Display for PomoKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PomoKind::Focus => write!(f, "FOCUS"),
+            PomoKind::Break => write!(f, "BREAK"),
+            PomoKind::LongBreak => write!(f, "LONG BREAK"),
+        }
+    }
+}
+
+type PomoProgress = f64;
+type RemainingSecs = u32;
+
+enum Event {
+    Input(event::KeyEvent),
+    Resize,
+    PomoUpdate(RemainingSecs, PomoProgress),
+    PomoDone,
+}
+
+enum Command {
+    Start(u32),
+    Pause,
+    Resume,
+    Quit,
+}
+
+#[derive(Debug, Default)]
+enum PomoStatus {
+    #[default]
+    Running,
+    Paused,
+}
+
+#[derive(Default)]
+struct Pomo {
+    kind: PomoKind,
+    count: usize,
+    progress: PomoProgress,
+    status: PomoStatus,
+    rem: RemainingSecs,
+}
+
+impl Pomo {
+    fn new() -> Self {
+        Default::default()
+    }
+}
+
+fn main() -> std::io::Result<()> {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
-        viewport: Viewport::Inline(8),
+        viewport: Viewport::Inline(13),
     });
 
-    let (tx, rx) = mpsc::channel();
-    input_handling(tx.clone());
-    let workers = workers(tx);
-    let mut downloads = downloads();
+    let (event_tx, event_rx) = mpsc::channel();
+    let (worker_tx, worker_rx) = mpsc::channel();
 
-    for w in &workers {
-        let d = downloads.next(w.id).unwrap();
-        w.tx.send(d).unwrap();
-    }
+    handle_input(event_tx.clone());
 
-    let app_result = run(&mut terminal, workers, downloads, rx);
+    let event_to_worker = event_tx.clone();
+    let worker = thread::spawn(move || {
+        pomo_worker(event_to_worker, worker_rx);
+    });
+
+    let app_result = run(&mut terminal, event_rx, worker_tx);
 
     ratatui::restore();
+
+    worker.join().unwrap();
 
     app_result
 }
 
-const NUM_DOWNLOADS: usize = 10;
-
-type DownloadId = usize;
-type WorkerId = usize;
-enum Event {
-    Input(event::KeyEvent),
-    Tick,
-    Resize,
-    DownloadUpdate(WorkerId, DownloadId, f64),
-    DownloadDone(WorkerId, DownloadId),
-}
-struct Downloads {
-    pending: VecDeque<Download>,
-    in_progress: BTreeMap<WorkerId, DownloadInProgress>,
-}
-
-impl Downloads {
-    fn next(&mut self, worker_id: WorkerId) -> Option<Download> {
-        match self.pending.pop_front() {
-            Some(d) => {
-                self.in_progress.insert(
-                    worker_id,
-                    DownloadInProgress {
-                        id: d.id,
-                        started_at: Instant::now(),
-                        progress: 0.0,
-                    },
-                );
-                Some(d)
-            }
-            None => None,
-        }
-    }
-}
-struct DownloadInProgress {
-    id: DownloadId,
-    started_at: Instant,
-    progress: f64,
-}
-struct Download {
-    id: DownloadId,
-    size: usize,
-}
-struct Worker {
-    id: WorkerId,
-    tx: mpsc::Sender<Download>,
-}
-
-fn input_handling(tx: mpsc::Sender<Event>) {
-    let tick_rate = Duration::from_millis(200);
-    thread::spawn(move || {
-        let mut last_tick = Instant::now();
-        loop {
-            // poll for tick rate duration, if no events, sent tick event.
-            let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-            if event::poll(timeout).unwrap() {
-                match event::read().unwrap() {
-                    event::Event::Key(key) => tx.send(Event::Input(key)).unwrap(),
-                    event::Event::Resize(_, _) => tx.send(Event::Resize).unwrap(),
-                    _ => {}
+fn next_pomo(pomo: Pomo) -> Pomo {
+    match pomo.kind {
+        PomoKind::Focus => {
+            if pomo.count > 0 && pomo.count % 4 == 0 {
+                Pomo {
+                    kind: PomoKind::LongBreak,
+                    count: pomo.count,
+                    ..Default::default()
+                }
+            } else {
+                Pomo {
+                    kind: PomoKind::Break,
+                    count: pomo.count,
+                    ..Default::default()
                 }
             }
-            if last_tick.elapsed() >= tick_rate {
-                tx.send(Event::Tick).unwrap();
-                last_tick = Instant::now();
+        }
+        _ => Pomo {
+            kind: PomoKind::Focus,
+            count: pomo.count + 1,
+            ..Default::default()
+        },
+    }
+}
+
+fn handle_input(tx: mpsc::Sender<Event>) {
+    thread::spawn(move || {
+        loop {
+            match event::read().unwrap() {
+                event::Event::Key(key) => tx.send(Event::Input(key)).unwrap(),
+                event::Event::Resize(_, _) => tx.send(Event::Resize).unwrap(),
+                _ => {}
             }
         }
     });
 }
 
-#[expect(clippy::cast_precision_loss, clippy::needless_pass_by_value)]
-fn workers(tx: mpsc::Sender<Event>) -> Vec<Worker> {
-    (0..4)
-        .map(|id| {
-            let (worker_tx, worker_rx) = mpsc::channel::<Download>();
-            let tx = tx.clone();
-            thread::spawn(move || {
-                while let Ok(download) = worker_rx.recv() {
-                    let mut remaining = download.size;
-                    while remaining > 0 {
-                        let wait = (remaining as u64).min(10);
-                        thread::sleep(Duration::from_millis(wait * 10));
-                        remaining = remaining.saturating_sub(10);
-                        let progress = (download.size - remaining) * 100 / download.size;
-                        tx.send(Event::DownloadUpdate(id, download.id, progress as f64))
-                            .unwrap();
-                    }
-                    tx.send(Event::DownloadDone(id, download.id)).unwrap();
-                }
-            });
-            Worker { id, tx: worker_tx }
-        })
-        .collect()
-}
+fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<Command>) {
+    let mut total_secs = 0;
+    let mut remaining_secs = 0;
+    let mut is_paused = false;
+    loop {
+        let timeout = if is_paused {
+            Duration::MAX
+        } else {
+            Duration::from_secs(1)
+        };
 
-fn downloads() -> Downloads {
-    let distribution = Uniform::new(0, 1000).expect("invalid range");
-    let mut rng = rand::rng();
-    let pending = (0..NUM_DOWNLOADS)
-        .map(|id| {
-            let size = distribution.sample(&mut rng);
-            Download { id, size }
-        })
-        .collect();
-    Downloads {
-        pending,
-        in_progress: BTreeMap::new(),
+        match rx.recv_timeout(timeout) {
+            Ok(command) => match command {
+                Command::Start(mins) => {
+                    total_secs = mins * 60;
+                    remaining_secs = total_secs;
+                    is_paused = false;
+                }
+                Command::Pause => is_paused = true,
+                Command::Resume => is_paused = false,
+                Command::Quit => break,
+            },
+            Err(_) => {
+                if is_paused {
+                    continue;
+                }
+                if remaining_secs > 0 {
+                    remaining_secs -= 1;
+                    let progress = (total_secs - remaining_secs) * 100 / total_secs;
+                    tx.send(Event::PomoUpdate(remaining_secs, progress as f64))
+                        .unwrap();
+                } else {
+                    tx.send(Event::PomoDone).unwrap();
+                }
+            }
+        }
     }
 }
 
-#[expect(clippy::needless_pass_by_value)]
-fn run<B: Backend>(
-    terminal: &mut Terminal<B>,
-    workers: Vec<Worker>,
-    mut downloads: Downloads,
-    rx: mpsc::Receiver<Event>,
-) -> Result<()>
-where
-    B::Error: Send + Sync + 'static,
-{
-    let mut redraw = true;
+fn run(
+    terminal: &mut DefaultTerminal,
+    event_rx: mpsc::Receiver<Event>,
+    worker_tx: mpsc::Sender<Command>,
+) -> std::io::Result<()> {
+    let mut pomo = Pomo::new();
+    worker_tx
+        .send(Command::Start(pomo.kind.get_mins()))
+        .unwrap();
     loop {
-        if redraw {
-            terminal.draw(|frame| render(frame, &downloads))?;
-        }
-        redraw = true;
-
-        match rx.recv()? {
-            Event::Input(event) => {
-                if event.code == event::KeyCode::Char('q') {
+        // terminal.draw(|frame| render(frame, &pomo))?;
+        terminal.draw(|frame| frame.render_widget(&pomo, frame.area()))?;
+        match event_rx.recv().unwrap() {
+            Event::Input(event) => match event.code {
+                event::KeyCode::Char('q') => {
+                    worker_tx.send(Command::Quit).unwrap();
                     break;
                 }
-            }
-            Event::Resize => {
-                terminal.autoresize()?;
-            }
-            Event::Tick => {}
-            Event::DownloadUpdate(worker_id, _download_id, progress) => {
-                let download = downloads.in_progress.get_mut(&worker_id).unwrap();
-                download.progress = progress;
-                redraw = false;
-            }
-            Event::DownloadDone(worker_id, download_id) => {
-                let download = downloads.in_progress.remove(&worker_id).unwrap();
-                terminal.insert_before(1, |buf| {
-                    Paragraph::new(Line::from(vec![
-                        Span::from("Finished "),
-                        Span::styled(
-                            format!("download {download_id}"),
-                            Style::default().add_modifier(Modifier::BOLD),
-                        ),
-                        Span::from(format!(
-                            " in {}ms",
-                            download.started_at.elapsed().as_millis()
-                        )),
-                    ]))
-                    .render(buf.area, buf);
-                })?;
-                match downloads.next(worker_id) {
-                    Some(d) => workers[worker_id].tx.send(d).unwrap(),
-                    None => {
-                        if downloads.in_progress.is_empty() {
-                            terminal.insert_before(1, |buf| {
-                                Paragraph::new("Done !").render(buf.area, buf);
-                            })?;
-                            break;
+                event::KeyCode::Char('p') => {
+                    pomo.status = match pomo.status {
+                        PomoStatus::Running => {
+                            worker_tx.send(Command::Pause).unwrap();
+                            PomoStatus::Paused
+                        }
+                        PomoStatus::Paused => {
+                            worker_tx.send(Command::Resume).unwrap();
+                            PomoStatus::Running
                         }
                     }
                 }
+                event::KeyCode::Char('r') => {
+                    worker_tx
+                        .send(Command::Start(pomo.kind.get_mins()))
+                        .unwrap();
+                    pomo.status = PomoStatus::Running;
+                }
+                event::KeyCode::Char('n') => {
+                    pomo = next_pomo(pomo);
+                    worker_tx
+                        .send(Command::Start(pomo.kind.get_mins()))
+                        .unwrap();
+                    pomo.status = PomoStatus::Running;
+                }
+                _ => {}
+            },
+            Event::Resize => {
+                terminal.autoresize()?;
+            }
+            Event::PomoUpdate(remaining_secs, progress) => {
+                pomo.rem = remaining_secs;
+                pomo.progress = progress;
+            }
+            Event::PomoDone => {
+                pomo = next_pomo(pomo);
             }
         }
     }
     Ok(())
 }
 
-fn render(frame: &mut Frame, downloads: &Downloads) {
-    let area = frame.area();
+impl Widget for &Pomo {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let main_layouts = Layout::default()
+            .direction(Direction::Horizontal)
+            .margin(1)
+            .constraints(vec![Constraint::Min(40), Constraint::Percentage(50)])
+            .split(area);
+        let main_layout = main_layouts[0];
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![
+                Constraint::Length(1),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ])
+            .split(main_layout);
 
-    let block = Block::new().title(Line::from("Progress").centered());
-    frame.render_widget(block, area);
+        let header: Line = vec!["POMO".blue().bold()].into();
+        header.centered().render(layout[0], buf);
 
-    let vertical = Layout::vertical([Constraint::Length(2), Constraint::Length(4)]).margin(1);
-    let horizontal = Layout::horizontal([Constraint::Percentage(20), Constraint::Percentage(80)]);
-    let [progress_area, main] = area.layout(&vertical);
-    let [list_area, gauge_area] = main.layout(&horizontal);
+        List::from_iter([
+            ListItem::new(format!(" Session: {}", self.kind)),
+            ListItem::new(format!(" Status: {:?}", self.status)),
+            ListItem::new(format!(" Rem: {}:{}", self.rem / 60, self.rem % 60)),
+        ])
+        .render(layout[1], buf);
 
-    // total progress
-    let done = NUM_DOWNLOADS - downloads.pending.len() - downloads.in_progress.len();
-    #[expect(clippy::cast_precision_loss)]
-    let progress = LineGauge::default()
-        .filled_style(Style::default().fg(Color::Blue))
-        .label(format!("{done}/{NUM_DOWNLOADS}"))
-        .ratio(done as f64 / NUM_DOWNLOADS as f64);
-    frame.render_widget(progress, progress_area);
-
-    // in progress downloads
-    let items: Vec<ListItem> = downloads
-        .in_progress
-        .values()
-        .map(|download| {
-            ListItem::new(Line::from(vec![
-                Span::raw(symbols::DOT),
-                Span::styled(
-                    format!(" download {:>2}", download.id),
-                    Style::default()
-                        .fg(Color::LightGreen)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!(
-                    " ({}ms)",
-                    download.started_at.elapsed().as_millis()
-                )),
-            ]))
-        })
-        .collect();
-    let list = List::new(items);
-    frame.render_widget(list, list_area);
-
-    #[expect(clippy::cast_possible_truncation)]
-    for (i, (_, download)) in downloads.in_progress.iter().enumerate() {
-        let gauge = Gauge::default()
-            .gauge_style(Style::default().fg(Color::Yellow))
-            .ratio(download.progress / 100.0);
-        if gauge_area.top().saturating_add(i as u16) > area.bottom() {
-            continue;
-        }
-        frame.render_widget(
-            gauge,
-            Rect {
-                x: gauge_area.left(),
-                y: gauge_area.top().saturating_add(i as u16),
-                width: gauge_area.width,
-                height: 1,
-            },
-        );
+        LineGauge::default()
+            .filled_style(Style::new().white().on_black().bold())
+            .filled_symbol(symbols::line::THICK_HORIZONTAL)
+            .ratio(self.progress / 100 as f64)
+            .render(layout[2], buf);
     }
 }
