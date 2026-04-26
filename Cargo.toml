@@ -1,6 +1,6 @@
 [package]
 name = "j-pomo"
-version = "0.1.1"
+version = "0.1.2"
 description = "Pomodoro cli for focus, break sessions in our terminal"
 authors = ["jobin_nelson <jobinnelson369@gmail.com>"]
 license = "MIT"

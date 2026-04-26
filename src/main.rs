@@ -85,7 +85,7 @@ impl Pomo {
 
 fn main() -> std::io::Result<()> {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
-        viewport: Viewport::Inline(8),
+        viewport: Viewport::Inline(13),
     });
 
     let state_file = get_state_file();
@@ -132,6 +132,31 @@ fn next_pomo(pomo: Pomo) -> Pomo {
         _ => Pomo {
             kind: PomoKind::Focus,
             count: pomo.count + 1,
+            ..Default::default()
+        },
+    }
+}
+
+fn prev_pomo(pomo: Pomo) -> Pomo {
+    match pomo.kind {
+        PomoKind::Focus => {
+            if pomo.count > 0 && (pomo.count - 1).is_multiple_of(4) {
+                Pomo {
+                    kind: PomoKind::LongBreak,
+                    count: pomo.count - 1,
+                    ..Default::default()
+                }
+            } else {
+                Pomo {
+                    kind: PomoKind::Break,
+                    count: pomo.count - 1,
+                    ..Default::default()
+                }
+            }
+        }
+        _ => Pomo {
+            kind: PomoKind::Focus,
+            count: pomo.count,
             ..Default::default()
         },
     }
@@ -293,6 +318,13 @@ fn run(
                 }
                 event::KeyCode::Char('n') => {
                     pomo = next_pomo(pomo);
+                    worker_tx
+                        .send(PomoCommand::Start(pomo.kind.get_mins()))
+                        .unwrap();
+                    pomo.status = PomoStatus::Running;
+                }
+                event::KeyCode::Char('N') => {
+                    pomo = prev_pomo(pomo);
                     worker_tx
                         .send(PomoCommand::Start(pomo.kind.get_mins()))
                         .unwrap();
