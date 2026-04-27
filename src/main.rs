@@ -1,4 +1,3 @@
-use ratatui::TerminalOptions;
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::process::Command;
@@ -10,7 +9,7 @@ use ratatui::prelude::Stylize;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{LineGauge, List, ListItem, Widget};
-use ratatui::{DefaultTerminal, Viewport, symbols};
+use ratatui::{DefaultTerminal, TerminalOptions, Viewport, symbols};
 
 const FOCUS_MINS: u32 = 25;
 const BREAK_MINS: u32 = 5;
@@ -270,8 +269,7 @@ fn alert_user(pomo_kind: &PomoKind) {
 
     let _ = Command::new("paplay")
         .arg("/usr/share/sounds/freedesktop/stereo/complete.oga")
-        .spawn()
-        .ok();
+        .spawn();
 }
 
 fn run(

@@ -26,7 +26,8 @@ session with 5-minute break intervals following standard Pomodoro techniques.
 - Alerts user after each session is completed
 - Keybinds
   - `p`: toggle pause/play
-  - `n`: skip current session (FOCUS/BREAK)
+  - `n`: next session (FOCUS/BREAK)
+  - `N`: previous session (FOCUS/BREAK)
   - `r`: reset current session
   - `q`: quit
 
