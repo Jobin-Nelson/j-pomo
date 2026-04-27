@@ -13,7 +13,7 @@ use crate::models::{Pomo, PomoStatus};
 use crate::{Error, Result};
 
 pub fn run(terminal: DefaultTerminal) -> Result<()> {
-    let state_file = create_state_file();
+    let state_file = create_state_file()?;
     let _guard = StateFileGuard {
         path: state_file.clone(),
     };
