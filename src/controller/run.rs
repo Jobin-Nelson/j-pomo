@@ -4,13 +4,36 @@ use std::sync::mpsc;
 use crossterm::event;
 use ratatui::DefaultTerminal;
 
+use crate::config::{StateFileGuard, get_state_file};
 use crate::controller::actions::alert_user;
 use crate::controller::events::{Event, PomoCommand};
 use crate::controller::support::{next_pomo, prev_pomo};
+use crate::controller::workers::{handle_input, pomo_worker};
 use crate::models::{Pomo, PomoStatus};
 
-pub fn run(
-    terminal: &mut DefaultTerminal,
+pub fn run(terminal: DefaultTerminal) -> std::io::Result<()> {
+    let state_file = get_state_file();
+    let _guard = StateFileGuard {
+        path: state_file.clone(),
+    };
+
+    let (event_tx, event_rx) = mpsc::channel();
+    let (worker_tx, worker_rx) = mpsc::channel();
+
+    handle_input(event_tx.clone());
+
+    let event_to_worker = event_tx.clone();
+    let worker = pomo_worker(event_to_worker, worker_rx);
+
+    let app_result = run_loop(terminal, event_rx, worker_tx, state_file);
+
+    worker.join().unwrap();
+
+    app_result
+}
+
+fn run_loop(
+    mut terminal: DefaultTerminal,
     event_rx: mpsc::Receiver<Event>,
     worker_tx: mpsc::Sender<PomoCommand>,
     state_file: PathBuf,
