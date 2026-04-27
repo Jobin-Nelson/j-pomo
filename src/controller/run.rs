@@ -4,15 +4,16 @@ use std::sync::mpsc;
 use crossterm::event;
 use ratatui::DefaultTerminal;
 
-use crate::config::{StateFileGuard, get_state_file};
+use crate::config::{StateFileGuard, create_state_file};
 use crate::controller::actions::alert_user;
 use crate::controller::events::{Event, PomoCommand};
 use crate::controller::support::{next_pomo, prev_pomo};
 use crate::controller::workers::{handle_input, pomo_worker};
 use crate::models::{Pomo, PomoStatus};
+use crate::{Error, Result};
 
-pub fn run(terminal: DefaultTerminal) -> std::io::Result<()> {
-    let state_file = get_state_file();
+pub fn run(terminal: DefaultTerminal) -> Result<()> {
+    let state_file = create_state_file();
     let _guard = StateFileGuard {
         path: state_file.clone(),
     };
@@ -37,13 +38,15 @@ fn run_loop(
     event_rx: mpsc::Receiver<Event>,
     worker_tx: mpsc::Sender<PomoCommand>,
     state_file: PathBuf,
-) -> std::io::Result<()> {
+) -> Result<()> {
     let mut pomo = Pomo::new();
     worker_tx
         .send(PomoCommand::Start(pomo.kind.get_mins()))
         .unwrap();
     loop {
-        terminal.draw(|frame| frame.render_widget(&pomo, frame.area()))?;
+        terminal
+            .draw(|frame| frame.render_widget(&pomo, frame.area()))
+            .map_err(Error::Io)?;
         match event_rx.recv().unwrap() {
             Event::Input(event) => match event.code {
                 event::KeyCode::Char('q') => {

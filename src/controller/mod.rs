@@ -4,10 +4,9 @@ mod events;
 mod run;
 mod support;
 
-// -- Flatten
-pub use run::*;
+pub(super) mod workers;
 
 // -- Public
-pub mod workers;
+pub use run::*;
 
 // endregion: --- Modules

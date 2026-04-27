@@ -1,8 +1,9 @@
+use j_pomo::Result;
 use j_pomo::controller::run;
 
 use ratatui::{TerminalOptions, Viewport};
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<()> {
     let terminal = ratatui::init_with_options(TerminalOptions {
         viewport: Viewport::Inline(13),
     });

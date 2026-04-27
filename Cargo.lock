@@ -526,6 +526,7 @@ name = "j-pomo"
 version = "0.1.2"
 dependencies = [
  "crossterm 0.28.1",
+ "derive_more",
  "ratatui",
 ]
 

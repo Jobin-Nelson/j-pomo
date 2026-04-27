@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-pub fn get_state_file() -> PathBuf {
+pub fn create_state_file() -> PathBuf {
     let state_file = std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
