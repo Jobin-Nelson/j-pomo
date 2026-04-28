@@ -31,7 +31,13 @@ mod tests {
     #[test]
     fn test_exit_if_state_file_present() -> Result<()> {
         // -- Setup & Fixtures
-        let state_file = create_state_file()?;
+        let state_file = std::env::var("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let home = std::env::var("HOME").expect("HOME not set");
+                PathBuf::from(home).join(".local/state")
+            })
+            .join("pomodoro/status.txt");
         std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
