@@ -5,7 +5,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::symbols;
 use ratatui::text::Text;
-use ratatui::widgets::{LineGauge, List, ListItem, Widget};
+use ratatui::widgets::{Clear, LineGauge, List, ListItem, Widget};
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
@@ -54,6 +54,7 @@ impl Widget for &App {
                 let textarea_layout =
                     main_layout.centered(Constraint::Max(30), Constraint::Length(3));
 
+                Clear.render(textarea_layout, buf);
                 self.session_name.render(textarea_layout, buf)
             }
         }
