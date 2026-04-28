@@ -2,7 +2,6 @@ use std::sync::mpsc;
 
 use crate::controller::actions::alert_user;
 use crate::controller::events::{PomoCommand, PomoEvent};
-use crate::controller::support::{next_pomo, prev_pomo};
 use crate::controller::workers::{get_input, pomo_worker};
 use crate::models::{App, AppMode, PomoStatus};
 use crate::{Error, Result};
@@ -91,7 +90,7 @@ impl App {
                             PomoStatus::Running
                         }
                         PomoStatus::Done => {
-                            self.pomo = next_pomo(&self.pomo);
+                            self.pomo.next_pomo();
                             worker_tx
                                 .send(PomoCommand::Start(self.pomo.kind.get_mins()))
                                 .unwrap();
@@ -106,14 +105,14 @@ impl App {
                     self.pomo.status = PomoStatus::Running;
                 }
                 (_, KeyCode::Char('n')) => {
-                    self.pomo = next_pomo(&self.pomo);
+                    self.pomo.next_pomo();
                     worker_tx
                         .send(PomoCommand::Start(self.pomo.kind.get_mins()))
                         .unwrap();
                     self.pomo.status = PomoStatus::Running;
                 }
                 (_, KeyCode::Char('N')) => {
-                    self.pomo = prev_pomo(&self.pomo);
+                    self.pomo.prev_pomo();
                     worker_tx
                         .send(PomoCommand::Start(self.pomo.kind.get_mins()))
                         .unwrap();
