@@ -26,7 +26,7 @@ pub fn run(terminal: DefaultTerminal) -> Result<()> {
     let event_to_worker = event_tx.clone();
     let worker = pomo_worker(event_to_worker, worker_rx);
 
-    let app = App::default();
+    let app = App::new();
 
     let app_result = app.run_loop(terminal, event_rx, worker_tx, state_file);
 
@@ -100,10 +100,19 @@ impl App {
                         _ => {}
                     },
                     AppMode::SessionName => match (event.modifiers, event.code) {
+                        (_, KeyCode::Esc) => self.mode = AppMode::Progress,
                         (_, KeyCode::Enter) | (KeyModifiers::CONTROL, KeyCode::Char('m')) => {
                             self.mode = AppMode::Progress;
+                            let session_name = self.session_name.lines().join("\n");
+                            self.pomo.session = if session_name.is_empty() {
+                                None
+                            } else {
+                                Some(session_name)
+                            }
                         }
-                        _ => {}
+                        _ => {
+                            let _ = self.session_name.input(event);
+                        }
                     },
                 },
                 PomoEvent::Resize => {

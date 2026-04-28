@@ -5,7 +5,7 @@ use ratatui::{TerminalOptions, Viewport};
 
 fn main() -> Result<()> {
     let terminal = ratatui::init_with_options(TerminalOptions {
-        viewport: Viewport::Inline(13),
+        viewport: Viewport::Inline(15),
     });
 
     let app_result = run(terminal);

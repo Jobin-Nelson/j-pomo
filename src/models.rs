@@ -1,5 +1,9 @@
 use std::fmt::Display;
 
+use ratatui::{
+    text::Line,
+    widgets::{Block, Borders},
+};
 use ratatui_textarea::TextArea;
 
 use crate::constants::*;
@@ -71,4 +75,17 @@ pub struct App {
     pub pomo: Pomo,
     pub session_name: TextArea<'static>,
     pub mode: AppMode,
+}
+
+impl App {
+    pub fn new() -> Self {
+        let mut app = App::default();
+
+        app.session_name.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(Line::from(" Session Name ").centered()),
+        );
+        app
+    }
 }
