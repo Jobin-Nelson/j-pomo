@@ -46,7 +46,7 @@ impl App {
         worker_tx
             .send(PomoCommand::Start(self.pomo.kind.get_mins()))
             .unwrap();
-        loop {
+        while !self.should_exit {
             terminal
                 .draw(|frame| frame.render_widget(&self, frame.area()))
                 .map_err(Error::Io)?;
@@ -69,6 +69,13 @@ impl App {
                                 }
                                 PomoStatus::Paused => {
                                     worker_tx.send(PomoCommand::Resume).unwrap();
+                                    PomoStatus::Running
+                                }
+                                PomoStatus::Done => {
+                                    self.pomo = next_pomo(self.pomo);
+                                    worker_tx
+                                        .send(PomoCommand::Start(self.pomo.kind.get_mins()))
+                                        .unwrap();
                                     PomoStatus::Running
                                 }
                             }
@@ -95,7 +102,6 @@ impl App {
                         }
                         (_, KeyCode::Char('s')) => {
                             self.mode = AppMode::SessionName;
-                            self.pomo.status = PomoStatus::Running;
                         }
                         _ => {}
                     },
@@ -132,11 +138,8 @@ impl App {
                     );
                 }
                 PomoEvent::PomoDone => {
-                    self.pomo = next_pomo(self.pomo);
                     alert_user(&self.pomo.kind);
-                    worker_tx
-                        .send(PomoCommand::Start(self.pomo.kind.get_mins()))
-                        .unwrap();
+                    self.pomo.status = PomoStatus::Done;
                 }
             }
         }

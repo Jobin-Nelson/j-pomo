@@ -8,11 +8,7 @@ pub fn alert_user(pomo_kind: &PomoKind) {
         .arg("critical")
         .arg("-a")
         .arg("pomo")
-        .arg(format!(
-            "START {}: {} mins",
-            pomo_kind,
-            pomo_kind.get_mins()
-        ))
+        .arg(format!("DONE {}: {} mins", pomo_kind, pomo_kind.get_mins()))
         .spawn();
 
     let _ = Command::new("paplay")

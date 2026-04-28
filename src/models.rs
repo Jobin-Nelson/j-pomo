@@ -44,6 +44,7 @@ pub enum PomoStatus {
     #[default]
     Running,
     Paused,
+    Done,
 }
 
 #[derive(Debug, Default)]
@@ -71,7 +72,7 @@ impl Pomo {
 
 #[derive(Debug, Default)]
 pub struct App {
-    pub exit: bool,
+    pub should_exit: bool,
     pub pomo: Pomo,
     pub session_name: TextArea<'static>,
     pub mode: AppMode,
