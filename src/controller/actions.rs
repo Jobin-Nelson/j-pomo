@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::models::PomoKind;
 
@@ -9,9 +9,13 @@ pub fn alert_user(pomo_kind: &PomoKind) {
         .arg("-a")
         .arg("pomo")
         .arg(format!("DONE {}: {} mins", pomo_kind, pomo_kind.get_mins()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn();
 
     let _ = Command::new("paplay")
         .arg("/usr/share/sounds/freedesktop/stereo/complete.oga")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn();
 }

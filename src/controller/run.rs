@@ -1,14 +1,14 @@
 use std::sync::mpsc;
 
-use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
 use crate::controller::actions::alert_user;
 use crate::controller::events::{PomoCommand, PomoEvent};
 use crate::controller::support::{next_pomo, prev_pomo};
 use crate::controller::workers::{get_input, pomo_worker};
 use crate::models::{App, AppMode, PomoStatus};
 use crate::{Error, Result};
+
+use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn run(terminal: DefaultTerminal) -> Result<()> {
     let (event_tx, event_rx) = mpsc::channel();
@@ -21,7 +21,7 @@ pub fn run(terminal: DefaultTerminal) -> Result<()> {
 
     let app = App::new()?;
 
-    let app_result = app.run_loop(terminal, event_rx, worker_tx);
+    let app_result = app.run(terminal, event_rx, worker_tx);
 
     worker.join().unwrap();
 
@@ -29,7 +29,7 @@ pub fn run(terminal: DefaultTerminal) -> Result<()> {
 }
 
 impl App {
-    fn run_loop(
+    fn run(
         mut self,
         mut terminal: DefaultTerminal,
         event_rx: mpsc::Receiver<PomoEvent>,

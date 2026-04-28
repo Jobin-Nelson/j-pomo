@@ -1,11 +1,11 @@
+use crate::constants::LOGO;
+use crate::models::App;
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::prelude::Stylize;
 use ratatui::style::Style;
 use ratatui::symbols;
-use ratatui::text::Line;
+use ratatui::text::Text;
 use ratatui::widgets::{LineGauge, List, ListItem, Widget};
-
-use crate::models::App;
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
@@ -13,23 +13,21 @@ impl Widget for &App {
         Self: Sized,
     {
         let pomo = &self.pomo;
-        let [main_layout, _] = Layout::default()
-            .direction(Direction::Horizontal)
-            .margin(1)
-            .constraints([Constraint::Min(40), Constraint::Percentage(50)])
-            .areas(area);
+        let main_layout = area.centered(Constraint::Percentage(60), Constraint::Percentage(60));
         let [header_layout, details_layout, progress_layout] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),
+                Constraint::Length(2),
                 Constraint::Length(4),
                 Constraint::Length(1),
             ])
             .spacing(1)
             .areas(main_layout);
 
-        let header: Line = vec!["POMO".blue().bold()].into();
-        header.centered().render(header_layout, buf);
+        Text::raw(LOGO)
+            .style(Style::default().blue().bold())
+            .centered()
+            .render(header_layout, buf);
 
         let session_name = match &self.pomo.session {
             None => "NONE",
@@ -45,7 +43,7 @@ impl Widget for &App {
         .render(details_layout, buf);
 
         LineGauge::default()
-            .filled_style(Style::new().white().on_black().bold())
+            .filled_style(Style::new().green().on_black().bold())
             .filled_symbol(symbols::line::THICK_HORIZONTAL)
             .ratio(pomo.progress / 100_f64)
             .render(progress_layout, buf);
