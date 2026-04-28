@@ -22,18 +22,6 @@ pub fn create_state_file() -> Result<PathBuf> {
     }
 }
 
-pub struct StateFileGuard {
-    pub path: PathBuf,
-}
-
-impl Drop for StateFileGuard {
-    fn drop(&mut self) {
-        if self.path.exists() {
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
-}
-
 // region:    --- Tests
 
 #[cfg(test)]

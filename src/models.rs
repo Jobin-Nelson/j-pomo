@@ -1,12 +1,13 @@
 use std::fmt::Display;
+use std::path::PathBuf;
+
+use crate::{Result, config::create_state_file, constants::*};
 
 use ratatui::{
     text::Line,
     widgets::{Block, Borders},
 };
 use ratatui_textarea::TextArea;
-
-use crate::constants::*;
 
 pub type PomoProgress = f64;
 pub type RemainingSecs = u32;
@@ -70,23 +71,47 @@ impl Pomo {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
+pub struct StateFileGuard {
+    pub path: PathBuf,
+}
+
+impl Drop for StateFileGuard {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct App {
     pub should_exit: bool,
     pub pomo: Pomo,
     pub session_name: TextArea<'static>,
     pub mode: AppMode,
+    pub state_file: StateFileGuard,
 }
 
 impl App {
-    pub fn new() -> Self {
-        let mut app = App::default();
+    pub fn new() -> Result<Self> {
+        let state_file = StateFileGuard {
+            path: create_state_file()?,
+        };
+
+        let mut app = App {
+            state_file,
+            should_exit: Default::default(),
+            pomo: Default::default(),
+            session_name: Default::default(),
+            mode: Default::default(),
+        };
 
         app.session_name.set_block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(Line::from(" Session Name ").centered()),
         );
-        app
+        Ok(app)
     }
 }
