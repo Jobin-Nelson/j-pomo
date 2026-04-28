@@ -1,8 +1,8 @@
-use crossterm::event;
+use ratatui::crossterm::event;
 
 use crate::models::{PomoProgress, RemainingSecs};
 
-pub enum Event {
+pub enum PomoEvent {
     Input(event::KeyEvent),
     Resize,
     PomoUpdate(RemainingSecs, PomoProgress),

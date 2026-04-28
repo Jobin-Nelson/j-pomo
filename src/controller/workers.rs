@@ -4,17 +4,17 @@ use std::{
     time::Duration,
 };
 
-use crossterm::event;
+use ratatui::crossterm::event;
 
-use crate::controller::events::{Event, PomoCommand};
+use crate::controller::events::{PomoCommand, PomoEvent};
 
-pub fn handle_input(tx: mpsc::Sender<Event>) {
+pub fn get_input(tx: mpsc::Sender<PomoEvent>) {
     thread::spawn(move || {
         loop {
             if let Ok(event) = event::read() {
                 let result = match event {
-                    event::Event::Key(key) => tx.send(Event::Input(key)),
-                    event::Event::Resize(_, _) => tx.send(Event::Resize),
+                    event::Event::Key(key) => tx.send(PomoEvent::Input(key)),
+                    event::Event::Resize(_, _) => tx.send(PomoEvent::Resize),
                     _ => Ok(()),
                 };
                 // if receiver is dropped, stop listening
@@ -26,7 +26,7 @@ pub fn handle_input(tx: mpsc::Sender<Event>) {
     });
 }
 
-pub fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<PomoCommand>) -> JoinHandle<()> {
+pub fn pomo_worker(tx: mpsc::Sender<PomoEvent>, rx: mpsc::Receiver<PomoCommand>) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut total_secs = 0;
         let mut remaining_secs = 0;
@@ -58,7 +58,7 @@ pub fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<PomoCommand>) -> 
                         let progress = (total_secs - remaining_secs) * 100 / total_secs;
                         // if send fails main thread has hung up. Time to exit.
                         if tx
-                            .send(Event::PomoUpdate(remaining_secs, progress as f64))
+                            .send(PomoEvent::PomoUpdate(remaining_secs, progress as f64))
                             .is_err()
                         {
                             break;
@@ -66,7 +66,7 @@ pub fn pomo_worker(tx: mpsc::Sender<Event>, rx: mpsc::Receiver<PomoCommand>) -> 
                     } else {
                         is_paused = true;
                         // if send fails main thread has hung up. Time to exit.
-                        if tx.send(Event::PomoDone).is_err() {
+                        if tx.send(PomoEvent::PomoDone).is_err() {
                             break;
                         }
                     }

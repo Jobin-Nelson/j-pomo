@@ -10,6 +10,7 @@ edition = "2024"
 crossterm = { version = "0.28.1", features = ["event-stream"] }
 derive_more = { version = "2.1.1", features = ["from"] }
 ratatui = "0.30.0"
+ratatui-textarea = "0.9.1"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

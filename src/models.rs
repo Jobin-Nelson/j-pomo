@@ -1,11 +1,13 @@
 use std::fmt::Display;
 
+use ratatui_textarea::TextArea;
+
 use crate::constants::*;
 
 pub type PomoProgress = f64;
 pub type RemainingSecs = u32;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub enum PomoKind {
     #[default]
     Focus,
@@ -40,17 +42,33 @@ pub enum PomoStatus {
     Paused,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
+pub enum AppMode {
+    #[default]
+    Progress,
+    SessionName,
+}
+
+#[derive(Debug, Default)]
 pub struct Pomo {
     pub kind: PomoKind,
     pub count: usize,
     pub progress: PomoProgress,
     pub status: PomoStatus,
     pub rem: RemainingSecs,
+    pub session: Option<String>,
 }
 
 impl Pomo {
     pub fn new() -> Self {
         Default::default()
     }
+}
+
+#[derive(Debug, Default)]
+pub struct App {
+    pub exit: bool,
+    pub pomo: Pomo,
+    pub session_name: TextArea<'static>,
+    pub mode: AppMode,
 }

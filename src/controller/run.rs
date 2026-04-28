@@ -1,15 +1,15 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
 
-use crossterm::event;
 use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::config::{StateFileGuard, create_state_file};
 use crate::controller::actions::alert_user;
-use crate::controller::events::{Event, PomoCommand};
+use crate::controller::events::{PomoCommand, PomoEvent};
 use crate::controller::support::{next_pomo, prev_pomo};
-use crate::controller::workers::{handle_input, pomo_worker};
-use crate::models::{Pomo, PomoStatus};
+use crate::controller::workers::{get_input, pomo_worker};
+use crate::models::{App, AppMode, PomoStatus};
 use crate::{Error, Result};
 
 pub fn run(terminal: DefaultTerminal) -> Result<()> {
@@ -21,97 +21,116 @@ pub fn run(terminal: DefaultTerminal) -> Result<()> {
     let (event_tx, event_rx) = mpsc::channel();
     let (worker_tx, worker_rx) = mpsc::channel();
 
-    handle_input(event_tx.clone());
+    get_input(event_tx.clone());
 
     let event_to_worker = event_tx.clone();
     let worker = pomo_worker(event_to_worker, worker_rx);
 
-    let app_result = run_loop(terminal, event_rx, worker_tx, state_file);
+    let app = App::default();
+
+    let app_result = app.run_loop(terminal, event_rx, worker_tx, state_file);
 
     worker.join().unwrap();
 
     app_result
 }
 
-fn run_loop(
-    mut terminal: DefaultTerminal,
-    event_rx: mpsc::Receiver<Event>,
-    worker_tx: mpsc::Sender<PomoCommand>,
-    state_file: PathBuf,
-) -> Result<()> {
-    let mut pomo = Pomo::new();
-    worker_tx
-        .send(PomoCommand::Start(pomo.kind.get_mins()))
-        .unwrap();
-    loop {
-        terminal
-            .draw(|frame| frame.render_widget(&pomo, frame.area()))
-            .map_err(Error::Io)?;
-        match event_rx.recv().unwrap() {
-            Event::Input(event) => match event.code {
-                event::KeyCode::Char('q') => {
-                    let _ = worker_tx.send(PomoCommand::Quit);
-                    break;
-                }
-                event::KeyCode::Char('c')
-                    if event.modifiers.contains(event::KeyModifiers::CONTROL) =>
-                {
-                    let _ = worker_tx.send(PomoCommand::Quit);
-                    break;
-                }
-                event::KeyCode::Char('p') => {
-                    pomo.status = match pomo.status {
-                        PomoStatus::Running => {
-                            worker_tx.send(PomoCommand::Pause).unwrap();
-                            PomoStatus::Paused
+impl App {
+    fn run_loop(
+        mut self,
+        mut terminal: DefaultTerminal,
+        event_rx: mpsc::Receiver<PomoEvent>,
+        worker_tx: mpsc::Sender<PomoCommand>,
+        state_file: PathBuf,
+    ) -> Result<()> {
+        worker_tx
+            .send(PomoCommand::Start(self.pomo.kind.get_mins()))
+            .unwrap();
+        loop {
+            terminal
+                .draw(|frame| frame.render_widget(&self, frame.area()))
+                .map_err(Error::Io)?;
+            match event_rx.recv().unwrap() {
+                PomoEvent::Input(event) => match self.mode {
+                    AppMode::Progress => match (event.modifiers, event.code) {
+                        (_, KeyCode::Char('q')) => {
+                            let _ = worker_tx.send(PomoCommand::Quit);
+                            break;
                         }
-                        PomoStatus::Paused => {
-                            worker_tx.send(PomoCommand::Resume).unwrap();
-                            PomoStatus::Running
+                        (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) => {
+                            let _ = worker_tx.send(PomoCommand::Quit);
+                            break;
                         }
-                    }
+                        (_, KeyCode::Char('p')) => {
+                            self.pomo.status = match self.pomo.status {
+                                PomoStatus::Running => {
+                                    worker_tx.send(PomoCommand::Pause).unwrap();
+                                    PomoStatus::Paused
+                                }
+                                PomoStatus::Paused => {
+                                    worker_tx.send(PomoCommand::Resume).unwrap();
+                                    PomoStatus::Running
+                                }
+                            }
+                        }
+                        (_, KeyCode::Char('r')) => {
+                            worker_tx
+                                .send(PomoCommand::Start(self.pomo.kind.get_mins()))
+                                .unwrap();
+                            self.pomo.status = PomoStatus::Running;
+                        }
+                        (_, KeyCode::Char('n')) => {
+                            self.pomo = next_pomo(self.pomo);
+                            worker_tx
+                                .send(PomoCommand::Start(self.pomo.kind.get_mins()))
+                                .unwrap();
+                            self.pomo.status = PomoStatus::Running;
+                        }
+                        (_, KeyCode::Char('N')) => {
+                            self.pomo = prev_pomo(self.pomo);
+                            worker_tx
+                                .send(PomoCommand::Start(self.pomo.kind.get_mins()))
+                                .unwrap();
+                            self.pomo.status = PomoStatus::Running;
+                        }
+                        (_, KeyCode::Char('s')) => {
+                            self.mode = AppMode::SessionName;
+                            self.pomo.status = PomoStatus::Running;
+                        }
+                        _ => {}
+                    },
+                    AppMode::SessionName => match (event.modifiers, event.code) {
+                        (_, KeyCode::Enter) | (KeyModifiers::CONTROL, KeyCode::Char('m')) => {
+                            self.mode = AppMode::Progress;
+                        }
+                        _ => {}
+                    },
+                },
+                PomoEvent::Resize => {
+                    terminal.autoresize()?;
                 }
-                event::KeyCode::Char('r') => {
+                PomoEvent::PomoUpdate(remaining_secs, progress) => {
+                    self.pomo.rem = remaining_secs;
+                    self.pomo.progress = progress;
+                    let _ = std::fs::write(
+                        state_file.as_path(),
+                        format!(
+                            "{}: {}:{}",
+                            self.pomo.kind,
+                            self.pomo.rem / 60,
+                            self.pomo.rem % 60
+                        ),
+                    );
+                }
+                PomoEvent::PomoDone => {
+                    self.pomo = next_pomo(self.pomo);
+                    alert_user(&self.pomo.kind);
                     worker_tx
-                        .send(PomoCommand::Start(pomo.kind.get_mins()))
+                        .send(PomoCommand::Start(self.pomo.kind.get_mins()))
                         .unwrap();
-                    pomo.status = PomoStatus::Running;
                 }
-                event::KeyCode::Char('n') => {
-                    pomo = next_pomo(pomo);
-                    worker_tx
-                        .send(PomoCommand::Start(pomo.kind.get_mins()))
-                        .unwrap();
-                    pomo.status = PomoStatus::Running;
-                }
-                event::KeyCode::Char('N') => {
-                    pomo = prev_pomo(pomo);
-                    worker_tx
-                        .send(PomoCommand::Start(pomo.kind.get_mins()))
-                        .unwrap();
-                    pomo.status = PomoStatus::Running;
-                }
-                _ => {}
-            },
-            Event::Resize => {
-                terminal.autoresize()?;
-            }
-            Event::PomoUpdate(remaining_secs, progress) => {
-                pomo.rem = remaining_secs;
-                pomo.progress = progress;
-                let _ = std::fs::write(
-                    state_file.as_path(),
-                    format!("{}: {}:{}", pomo.kind, pomo.rem / 60, pomo.rem % 60),
-                );
-            }
-            Event::PomoDone => {
-                pomo = next_pomo(pomo);
-                alert_user(&pomo.kind);
-                worker_tx
-                    .send(PomoCommand::Start(pomo.kind.get_mins()))
-                    .unwrap();
             }
         }
+        Ok(())
     }
-    Ok(())
 }
