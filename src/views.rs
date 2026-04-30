@@ -2,10 +2,9 @@ use crate::constants::LOGO;
 use crate::models::App;
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::Style;
-use ratatui::symbols;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Text;
-use ratatui::widgets::{Clear, LineGauge, List, ListItem, Widget};
+use ratatui::widgets::{Clear, Gauge, List, ListItem, Widget};
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
@@ -42,10 +41,16 @@ impl Widget for &App {
         ])
         .render(details_layout, buf);
 
-        LineGauge::default()
-            .filled_style(Style::new().green().on_black().bold())
-            .filled_symbol(symbols::line::THICK_HORIZONTAL)
-            .ratio(pomo.progress / 100_f64)
+        // LineGauge::default()
+        //     .filled_style(Style::new().green().bold())
+        //     .filled_symbol(symbols::line::THICK_HORIZONTAL)
+        //     .ratio(pomo.progress / 100_f64)
+        //     .render(progress_layout, buf);
+
+        Gauge::default()
+            .style(Modifier::BOLD)
+            .gauge_style(Style::new().light_blue().on_black())
+            .percent(pomo.progress as u16)
             .render(progress_layout, buf);
 
         match self.mode {
