@@ -41,12 +41,6 @@ impl Widget for &App {
         ])
         .render(details_layout, buf);
 
-        // LineGauge::default()
-        //     .filled_style(Style::new().green().bold())
-        //     .filled_symbol(symbols::line::THICK_HORIZONTAL)
-        //     .ratio(pomo.progress / 100_f64)
-        //     .render(progress_layout, buf);
-
         Gauge::default()
             .style(Modifier::BOLD)
             .gauge_style(Style::new().light_blue().on_black())
