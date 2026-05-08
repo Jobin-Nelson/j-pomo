@@ -15,6 +15,15 @@ pub fn create_state_file() -> Result<PathBuf> {
     }
 }
 
+pub fn clean_state_file() -> Result<()> {
+    let state_file = get_file_path();
+    if state_file.exists() {
+        std::fs::remove_file(&state_file)?;
+    }
+    println!("Cleaned state file");
+    Ok(())
+}
+
 fn get_file_path() -> PathBuf {
     std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)

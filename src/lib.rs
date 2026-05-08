@@ -5,7 +5,7 @@ mod models;
 mod views;
 
 // -- Flatten
-pub(crate) mod config;
+pub mod config;
 pub mod controller;
 
 pub use error::{Error, Result};
