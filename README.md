@@ -1,5 +1,7 @@
 # Pomodoro
 
+![Pomo Image](./assets/pomo.png)
+
 <!--toc:start-->
 
 - [Pomodoro](#pomodoro)
