@@ -60,7 +60,7 @@ impl App {
                     );
                 }
                 PomoEvent::PomoDone => {
-                    alert_user(&self.pomo.kind);
+                    alert_user(&self.pomo.kind, &self.platform);
                     self.pomo.status = PomoStatus::Done;
                 }
             }

@@ -7,6 +7,7 @@ pub enum Error {
     #[from(String, &String, &str)]
     Custom(String),
     AnotherInstanceInUse,
+    UnknownEnvironment,
 
     // -- Externals
     #[from]

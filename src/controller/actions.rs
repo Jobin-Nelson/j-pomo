@@ -1,8 +1,8 @@
 use std::process::{Command, Stdio};
 
-use crate::models::PomoKind;
+use crate::models::{Platform, PomoKind};
 
-pub fn alert_user(pomo_kind: &PomoKind) {
+pub fn alert_user(pomo_kind: &PomoKind, platform: &Platform) {
     let _ = Command::new("notify-send")
         .arg("-u")
         .arg("critical")

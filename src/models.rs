@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::path::PathBuf;
 
-use crate::{Result, config::create_state_file, constants::*};
+use crate::{Error, Result, config::create_state_file, constants::*};
 
 use ratatui::{
     text::Line,
@@ -91,6 +91,44 @@ pub struct App {
     pub session_name: TextArea<'static>,
     pub mode: AppMode,
     pub state_file: StateFileGuard,
+    pub platform: Platform,
+}
+
+#[derive(Debug)]
+pub enum Platform {
+    Windows,
+    Wsl,
+    Linux,
+    MacOs,
+}
+
+fn is_wsl() -> bool {
+    if let Ok(version) = std::fs::read_to_string("/proc/version") {
+        let version_lower = version.to_lowercase();
+        if version_lower.contains("microsoft") || version_lower.contains("wsl") {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn get_platform() -> Result<Platform> {
+    if cfg!(target_os = "windows") {
+        return Ok(Platform::Windows);
+    }
+    if cfg!(target_os = "macos") {
+        return Ok(Platform::MacOs);
+    }
+    if cfg!(target_os = "linux") {
+        if is_wsl() {
+            return Ok(Platform::Wsl);
+        } else {
+            return Ok(Platform::Linux);
+        }
+    }
+
+    Err(Error::UnknownEnvironment)
 }
 
 impl App {
@@ -99,12 +137,15 @@ impl App {
             path: create_state_file()?,
         };
 
+        let platform = get_platform()?;
+
         let mut app = App {
             state_file,
             should_exit: Default::default(),
             pomo: Default::default(),
             session_name: Default::default(),
             mode: Default::default(),
+            platform,
         };
 
         app.session_name.set_block(
