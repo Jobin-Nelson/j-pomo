@@ -1,9 +1,9 @@
 use std::sync::mpsc;
 
-use crate::controller::actions::alert_user;
+use crate::controller::actions::{alert_linux_user, alert_wsl_user};
 use crate::controller::events::{PomoCommand, PomoEvent};
 use crate::controller::workers::{get_input, pomo_worker};
-use crate::models::{App, AppMode, PomoStatus};
+use crate::models::{App, AppMode, Platform, PomoStatus};
 use crate::{Error, Result};
 
 use ratatui::DefaultTerminal;
@@ -60,7 +60,12 @@ impl App {
                     );
                 }
                 PomoEvent::PomoDone => {
-                    alert_user(&self.pomo.kind, &self.platform);
+                    let pomo_kind = &self.pomo.kind;
+                    match self.platform {
+                        Platform::Wsl => alert_linux_user(pomo_kind),
+                        Platform::Linux => alert_wsl_user(pomo_kind),
+                        _ => {}
+                    }
                     self.pomo.status = PomoStatus::Done;
                 }
             }
